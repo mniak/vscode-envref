@@ -1,0 +1,125 @@
+{
+  "name": "vscode-external-secrets",
+  "displayName": "External Secrets",
+  "description": "Resolve secrets from a secrets manager into environment variables when you run or debug, mapped per variable in launch.json.",
+  "version": "0.1.0",
+  "publisher": "mniak",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mniak/vscode-external-secrets.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "secrets",
+    "aws",
+    "secrets manager",
+    "environment variables",
+    "external secrets"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onDebug",
+    "onCommand:externalSecrets.resolveInput"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "externalSecrets.clearCache",
+        "title": "External Secrets: Clear Cache"
+      },
+      {
+        "command": "externalSecrets.openTerminal",
+        "title": "External Secrets: Open Terminal With Secrets"
+      },
+      {
+        "command": "externalSecrets.exportEnvFile",
+        "title": "External Secrets: Export .env File"
+      },
+      {
+        "command": "externalSecrets.showLog",
+        "title": "External Secrets: Show Log"
+      }
+    ],
+    "configuration": {
+      "title": "External Secrets",
+      "properties": {
+        "externalSecrets.aws.profile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Default AWS profile used when a reference or launch configuration does not specify one. When unset, the AWS SDK credential chain is used."
+        },
+        "externalSecrets.aws.region": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Default AWS region used when a reference or launch configuration does not specify one. When unset, the region comes from the AWS profile or environment."
+        },
+        "externalSecrets.cache.ttlSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "How long resolved secrets stay in the in-memory cache. Values are never written to disk. Set to 0 to disable caching."
+        },
+        "externalSecrets.log.level": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Verbosity of the External Secrets output channel. Secret values are never logged at any level."
+        },
+        "externalSecrets.terminal.namedSets": {
+          "type": "object",
+          "default": {},
+          "description": "Named sets of secret references, usable by the terminal and .env export commands. Each value has the same shape as the externalSecrets block of a launch configuration.",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test:unit": "vitest run",
+    "test:integration": "tsc -p . && vscode-test",
+    "test": "npm run lint && npm run typecheck && npm run test:unit",
+    "package": "npm run build && vsce package",
+    "vscode:prepublish": "node esbuild.mjs --production"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "@aws-sdk/credential-providers": "^3.700.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
