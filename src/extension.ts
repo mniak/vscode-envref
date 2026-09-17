@@ -4,6 +4,7 @@ import { exportEnvFile } from './commands/exportEnvFile';
 import { openTerminal } from './commands/openTerminal';
 import { resolveInput } from './commands/resolveInput';
 import { CommandDeps } from './commands/sources';
+import { blockDefaultsFrom } from './config/defaults';
 import { ExternalSecretsConfigurationProvider } from './debug/configurationProvider';
 import { ChannelLogger } from './log';
 import { AwsSecretsManagerProvider } from './providers/awsSecretsManager';
@@ -35,16 +36,7 @@ export function activate(context: vscode.ExtensionContext): ExternalSecretsApi {
 
   const settingsFor = (folder: vscode.WorkspaceFolder | undefined): BlockDefaults => {
     const settings = vscode.workspace.getConfiguration('externalSecrets', folder ?? null);
-    const defaults: BlockDefaults = {};
-    const profile = settings.get<string>('aws.profile');
-    const region = settings.get<string>('aws.region');
-    if (profile !== undefined && profile !== '') {
-      defaults.profile = profile;
-    }
-    if (region !== undefined && region !== '') {
-      defaults.region = region;
-    }
-    return defaults;
+    return blockDefaultsFrom(settings.get('aws.profile'), settings.get('aws.region'));
   };
 
   const deps: CommandDeps = { resolver, logger, settings: settingsFor };
