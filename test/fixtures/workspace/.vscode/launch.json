@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "fixture with secrets",
+      "program": "${workspaceFolder}/app.js",
+      "env": {
+        "LOG_LEVEL": "debug"
+      },
+      "envRef": {
+        "sources": {
+          "fixture": { "provider": "aws-sm", "profile": "fixture", "region": "us-east-1" }
+        },
+        "vars": {
+          "DB_PASSWORD": { "source": "fixture", "key": "fixture/db", "property": "password" }
+        }
+      }
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "fixture without secrets",
+      "program": "${workspaceFolder}/app.js"
+    }
+  ]
+}

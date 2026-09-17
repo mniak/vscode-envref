@@ -1,0 +1,131 @@
+{
+  "name": "vscode-envref",
+  "displayName": "EnvRef — Secrets as Env Vars",
+  "description": "Reference secrets in launch.json instead of pasting them. Resolved from AWS Secrets Manager with your local credentials when you press F5.",
+  "version": "0.1.0",
+  "publisher": "mniak",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1F2428",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mniak/vscode-envref.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mniak/vscode-envref/issues"
+  },
+  "homepage": "https://github.com/mniak/vscode-envref#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "environment variables",
+    "secrets",
+    "launch.json",
+    "launch configuration",
+    "aws",
+    "secrets manager",
+    "secretsmanager",
+    "vault",
+    "dotenv",
+    "debug"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onDebug",
+    "onCommand:envref.resolveInput"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "envref.clearCache",
+        "title": "EnvRef: Clear Cache"
+      },
+      {
+        "command": "envref.openTerminal",
+        "title": "EnvRef: Open Terminal With Variables"
+      },
+      {
+        "command": "envref.exportEnvFile",
+        "title": "EnvRef: Export .env File"
+      },
+      {
+        "command": "envref.showLog",
+        "title": "EnvRef: Show Log"
+      }
+    ],
+    "configuration": {
+      "title": "EnvRef",
+      "properties": {
+        "envref.sources": {
+          "type": "object",
+          "default": {},
+          "description": "Named sources reusable from any launch configuration. Each entry sets \"provider\" plus that provider's own configuration, for example { \"dev\": { \"provider\": \"aws-sm\", \"profile\": \"sandbox\", \"region\": \"us-east-1\" } }. A source declared in an envRef block shadows one of the same name here.",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "envref.cache.ttlSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "How long resolved values stay in the in-memory cache. Values are never written to disk. Set to 0 to disable caching."
+        },
+        "envref.log.level": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Verbosity of the EnvRef output channel. Resolved values are never logged at any level."
+        },
+        "envref.namedSets": {
+          "type": "object",
+          "default": {},
+          "description": "Named sets of references, usable by the terminal and .env export commands. Each value has the same shape as the envRef block of a launch configuration.",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "test:unit": "vitest run",
+    "test:integration": "npm run build && tsc -p . && vscode-test",
+    "test": "npm run lint && npm run typecheck && npm run test:unit",
+    "package": "npm run build && vsce package",
+    "vscode:prepublish": "node esbuild.mjs --production"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "@aws-sdk/credential-providers": "^3.700.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
