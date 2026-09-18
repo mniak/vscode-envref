@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ParseError, parseBlock } from '../refs/parse';
 import { reportError, reportFailures } from '../ui/errors';
+import { withStatus } from '../ui/progress';
 import { CommandDeps } from './sources';
 
 const VAR_NAME = 'value';
@@ -42,7 +43,9 @@ export async function resolveInput(deps: CommandDeps, args: unknown): Promise<st
     return undefined;
   }
 
-  const outcome = await deps.resolver.resolve(parsed);
+  const outcome = await withStatus('External Secrets: resolving input variable…', () =>
+    deps.resolver.resolve(parsed),
+  );
   if (outcome.failures.length > 0) {
     await reportFailures(
       'External Secrets: could not resolve the input variable.',

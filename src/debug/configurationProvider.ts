@@ -5,6 +5,7 @@ import { ParseError, parseBlock } from '../refs/parse';
 import { SecretResolver } from '../resolve/resolver';
 import { BlockDefaults } from '../types';
 import { reportError, reportFailures } from '../ui/errors';
+import { withStatus } from '../ui/progress';
 
 export const BLOCK_KEY = 'externalSecrets';
 
@@ -44,7 +45,9 @@ export class ExternalSecretsConfigurationProvider implements vscode.DebugConfigu
       throw error;
     }
 
-    const outcome = await resolver.resolve(parsed);
+    const outcome = await withStatus(`External Secrets: resolving secrets for ${label}…`, () =>
+      resolver.resolve(parsed),
+    );
     if (outcome.failures.length > 0) {
       await reportFailures(
         `External Secrets: could not resolve ${outcome.failures.length} secret(s) for ${label}. The session was not started.`,

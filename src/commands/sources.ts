@@ -4,6 +4,7 @@ import { ParseError, parseBlock } from '../refs/parse';
 import { SecretResolver } from '../resolve/resolver';
 import { BlockDefaults } from '../types';
 import { reportError, reportFailures } from '../ui/errors';
+import { withStatus } from '../ui/progress';
 
 export interface CommandDeps {
   resolver: SecretResolver;
@@ -96,7 +97,9 @@ export async function resolveSource(
     throw error;
   }
 
-  const outcome = await deps.resolver.resolve(parsed);
+  const outcome = await withStatus(`External Secrets: resolving secrets for "${source.label}"…`, () =>
+    deps.resolver.resolve(parsed),
+  );
   if (outcome.failures.length > 0) {
     await reportFailures(
       `External Secrets: could not resolve ${outcome.failures.length} secret(s) for "${source.label}".`,
