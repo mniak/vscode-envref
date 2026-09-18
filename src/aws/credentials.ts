@@ -22,7 +22,7 @@ export class SecretsManagerClientFactory {
       credentials:
         scope.profile === undefined
           ? fromNodeProviderChain()
-          : fromIni({ profile: scope.profile, ...(scope.region === undefined ? {} : { clientConfig: { region: scope.region } }) }),
+          : fromIni({ profile: scope.profile }),
     });
     this.clients.set(cacheKey, client);
     return client;
