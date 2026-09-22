@@ -1,12 +1,11 @@
-# External Secrets for VS Code
+# EnvRef for VS Code
 
-Keep secrets out of `launch.json`. Reference them instead, and let the extension fetch the
-values from AWS Secrets Manager with your local AWS credentials at the moment you hit `F5`.
+Keep values out of `launch.json`. Reference them instead, and let the extension fetch them from
+a named source with your local credentials at the moment you hit `F5`.
 
-It is the local equivalent of the
-[ExternalSecrets Operator](https://external-secrets.io/): in the cluster your app receives
-credentials from a secret store; here your debug session receives them from the same store,
-mapped field by field into environment variables.
+A source is a name bound to a provider and its configuration — an AWS profile and region today,
+a vault address or a file path as providers are added. Each variable names the source it comes
+from, so one configuration can span several accounts, regions or providers at once.
 
 ```jsonc
 // .vscode/launch.json — safe to commit: only references, never values
@@ -21,14 +20,14 @@ mapped field by field into environment variables.
       "env": {
         "LOG_LEVEL": "debug"
       },
-      "externalSecrets": {
-        "provider": "aws-sm",
-        "profile": "dev-ext",
-        "region": "us-east-1",
-        "env": {
-          "DB_PASSWORD": { "key": "dev-ext/cards/db", "property": "password" },
-          "DB_HOST": { "key": "dev-ext/cards/db", "property": "host" },
-          "API_TOKEN": { "key": "dev-ext/cards/token" }
+      "envRef": {
+        "sources": {
+          "dev": { "provider": "aws-sm", "profile": "dev-ext", "region": "us-east-1" }
+        },
+        "vars": {
+          "DB_PASSWORD": { "source": "dev", "key": "dev-ext/cards/db", "property": "password" },
+          "DB_HOST": { "source": "dev", "key": "dev-ext/cards/db", "property": "host" },
+          "API_TOKEN": { "source": "dev", "key": "dev-ext/cards/token" }
         }
       }
     }
@@ -36,62 +35,94 @@ mapped field by field into environment variables.
 }
 ```
 
-## Why a separate `externalSecrets` block
+If you run [ExternalSecrets Operator](https://external-secrets.io/) in your cluster, the idea will
+be familiar: there your app receives credentials from a secret store, here your debug session
+receives them from one, mapped field by field into environment variables. EnvRef is an independent
+project and is not affiliated with it.
 
-The references live in their own block, not inside `env`, so the file keeps working for
-people who do not have the extension. The Debug Adapter Protocol declares the arguments of
-the `launch` request
-[implementation specific](https://microsoft.github.io/debug-adapter-protocol/specification),
-and adapters ignore attributes they do not know — without the extension the block is
-dropped and the session starts normally, just without those variables. An object inside
-`env` would not degrade: the adapter would receive an object where it expects a string.
+## Why a separate `envRef` block
+
+The references live in their own block, not inside `env`, so the file keeps working for people who
+do not have the extension. The Debug Adapter Protocol declares the arguments of the `launch` request
+[implementation specific](https://microsoft.github.io/debug-adapter-protocol/specification), and
+adapters ignore attributes they do not know — without the extension the block is dropped and the
+session starts normally, just without those variables. An object inside `env` would not degrade: the
+adapter would receive an object where it expects a string.
+
+## Sources
+
+A `sources` entry is a name, a `provider`, and whatever that provider needs. `aws-sm` is the only
+provider today and it accepts `profile` and `region`; both are optional, and omitting them falls back
+to the AWS SDK credential chain (`AWS_PROFILE`, `AWS_REGION`, env credentials, SSO cache, instance
+role, …).
+
+```jsonc
+"sources": {
+  "dev":   { "provider": "aws-sm", "profile": "dev-ext", "region": "us-east-1" },
+  "chain": { "provider": "aws-sm" }
+}
+```
+
+Declare sources once in your settings to reuse them from every launch configuration:
+
+```jsonc
+// .vscode/settings.json
+"envref.sources": {
+  "dev":     { "provider": "aws-sm", "profile": "dev-ext",     "region": "us-east-1" },
+  "partner": { "provider": "aws-sm", "profile": "prod-nonpci", "region": "eu-west-1" }
+}
+```
+
+A source declared in an `envRef` block shadows a settings source of the same name.
+
+A profile without a valid SSO session produces an error dialog with a **Run aws sso login** button
+that opens a terminal with `aws sso login --profile <profile>`.
+
+## Several accounts in one launch
+
+Each variable names its own source, so one configuration can span accounts, regions and providers.
+Two sources with identical configuration still share a single `GetSecretValue` call.
+
+```jsonc
+"envRef": {
+  "sources": {
+    "dev":     { "provider": "aws-sm", "profile": "dev-ext",     "region": "us-east-1" },
+    "partner": { "provider": "aws-sm", "profile": "prod-nonpci", "region": "eu-west-1" }
+  },
+  "vars": {
+    "DB_PASSWORD":   { "source": "dev",     "key": "dev-ext/cards/db", "property": "password" },
+    "PARTNER_TOKEN": { "source": "partner", "key": "partner/token" }
+  }
+}
+```
 
 ## Reference fields
 
 | Field | Required | Description |
 |---|---|---|
+| `source` | yes | Name of an entry in `sources`, here or in `envref.sources` |
 | `key` | yes | Secret name or ARN |
-| `provider` | on the reference or on the block | `aws-sm` is the only value today |
 | `property` | no | Field of the secret's JSON. Dotted paths (`db.password`) work for nested objects. Without it the whole `SecretString` is used |
-| `profile` | no | AWS profile for this variable |
-| `region` | no | AWS region for this variable |
 | `versionStage` | no | Defaults to `AWSCURRENT` |
 | `versionId` | no | Exact version; takes precedence over `versionStage` |
 | `default` | no | Used **only** when the secret or the field does not exist. It never masks a credential or permission error |
 | `encoding` | no | `utf8` (default) or `base64`, for secrets stored as `SecretBinary` |
 
-`provider`, `profile`, `region`, `versionStage` and `versionId` can be set once on the block
-as defaults and overridden per variable — two variables in the same configuration can come
-from different accounts and regions:
+`provider`, `profile` and `region` are **not** reference fields — they belong to the source. That is
+what makes a reference portable: it names *where* the value comes from, and the source decides *how*
+to get there.
+
+### `varsFrom`: every field of a secret
+
+When the secret is already modelled with the variable names, import all of its fields (the equivalent
+of `dataFrom` in ExternalSecrets):
 
 ```jsonc
-"externalSecrets": {
-  "provider": "aws-sm",
-  "profile": "dev-ext",
-  "region": "us-east-1",
-  "env": {
-    "DB_PASSWORD": { "key": "dev-ext/cards/db", "property": "password" },
-    "PARTNER_TOKEN": {
-      "key": "prod-nonpci/partner/token",
-      "property": "value",
-      "profile": "prod-nonpci",
-      "region": "eu-west-1"
-    }
-  }
-}
-```
-
-### `envFrom`: every field of a secret
-
-When the secret is already modelled with the variable names, import all of its fields
-(the equivalent of `dataFrom` in ExternalSecrets):
-
-```jsonc
-"externalSecrets": {
-  "provider": "aws-sm",
-  "envFrom": [
-    { "key": "dev-ext/cards/env" },
-    { "key": "dev-ext/cards/db", "prefix": "DB_" }
+"envRef": {
+  "sources": { "dev": { "provider": "aws-sm", "profile": "dev-ext" } },
+  "varsFrom": [
+    { "source": "dev", "key": "dev-ext/cards/env" },
+    { "source": "dev", "key": "dev-ext/cards/db", "prefix": "DB_" }
   ]
 }
 ```
@@ -99,32 +130,20 @@ When the secret is already modelled with the variable names, import all of its f
 ### Adapters that use `environment`
 
 `cppdbg` and `lldb` take an array instead of a map. The extension detects the shape of the
-configuration and writes to `environment` as `[{ "name": ..., "value": ... }]`. Force it
-with `"target": "environment"` (or `"env"`) inside the block.
-
-## Credentials
-
-Resolution order, most specific first:
-
-1. `profile` / `region` on the variable
-2. `profile` / `region` on the `externalSecrets` block
-3. `externalSecrets.aws.profile` / `externalSecrets.aws.region` in workspace or user settings
-4. the default AWS SDK credential chain (`AWS_PROFILE`, `AWS_REGION`, env credentials,
-   SSO cache, instance role, …)
-
-A profile without a valid SSO session produces an error dialog with a **Run aws sso login**
-button that opens a terminal with `aws sso login --profile <profile>`.
+configuration and writes to `environment` as `[{ "name": ..., "value": ... }]`. Force it with
+`"target": "environment"` (or `"env"`) inside the block.
 
 ## Errors
 
-Any failure aborts the launch — the app never starts with a missing or empty variable. The
-dialog lists each variable that failed with its reason, plus buttons to log in, to open
+Any failure aborts the launch — the app never starts with a missing or empty variable. The dialog
+lists each variable that failed with its source and reason, plus buttons to log in, to open
 `launch.json` at the offending reference, or to show the log.
 
 ## Other surfaces
 
-- **`tasks.json` and any string**: the command `externalSecrets.resolveInput` works as a
-  [command input variable](https://code.visualstudio.com/docs/reference/variables-reference):
+- **`tasks.json` and any string**: the command `envref.resolveInput` works as a
+  [command input variable](https://code.visualstudio.com/docs/reference/variables-reference). Declare
+  the source in `envref.sources` and the input stays a one-liner:
 
   ```jsonc
   {
@@ -133,8 +152,8 @@ dialog lists each variable that failed with its reason, plus buttons to log in, 
       {
         "id": "dbPass",
         "type": "command",
-        "command": "externalSecrets.resolveInput",
-        "args": { "provider": "aws-sm", "key": "dev-ext/cards/db", "property": "password" }
+        "command": "envref.resolveInput",
+        "args": { "source": "dev", "key": "dev-ext/cards/db", "property": "password" }
       }
     ],
     "tasks": [
@@ -148,22 +167,20 @@ dialog lists each variable that failed with its reason, plus buttons to log in, 
   }
   ```
 
-- **`External Secrets: Open Terminal with Secrets`** — a terminal whose environment already
-  has the variables of a launch configuration or of a named set.
-- **`External Secrets: Export .env File`** — writes the resolved values to a file, behind an
-  explicit confirmation, with permissions `0600` and an offer to add it to `.gitignore`.
-  This is the only feature that puts secrets on disk.
-- **`External Secrets: Clear Cache`** — drops the in-memory cache (after rotating a secret).
+- **`EnvRef: Open Terminal With Variables`** — a terminal whose environment already has the variables
+  of a launch configuration or of a named set.
+- **`EnvRef: Export .env File`** — writes the resolved values to a file, behind an explicit
+  confirmation, with permissions `0600` and an offer to add it to `.gitignore`. This is the only
+  feature that puts values on disk.
+- **`EnvRef: Clear Cache`** — drops the in-memory cache (after rotating a secret).
 
 Both commands also accept sets declared in settings:
 
 ```jsonc
-"externalSecrets.terminal.namedSets": {
+"envref.namedSets": {
   "cards": {
-    "provider": "aws-sm",
-    "profile": "dev-ext",
-    "region": "us-east-1",
-    "env": { "DB_PASSWORD": { "key": "dev-ext/cards/db", "property": "password" } }
+    "sources": { "dev": { "provider": "aws-sm", "profile": "dev-ext", "region": "us-east-1" } },
+    "vars": { "DB_PASSWORD": { "source": "dev", "key": "dev-ext/cards/db", "property": "password" } }
   }
 }
 ```
@@ -172,38 +189,38 @@ Both commands also accept sets declared in settings:
 
 | Setting | Default | Description |
 |---|---|---|
-| `externalSecrets.aws.profile` | — | Fallback AWS profile |
-| `externalSecrets.aws.region` | — | Fallback AWS region |
-| `externalSecrets.cache.ttlSeconds` | `300` | In-memory cache lifetime. `0` disables it |
-| `externalSecrets.log.level` | `info` | `error`, `warn`, `info` or `debug` |
-| `externalSecrets.terminal.namedSets` | `{}` | Named sets of references |
+| `envref.sources` | `{}` | Named sources reusable from any launch configuration |
+| `envref.cache.ttlSeconds` | `300` | In-memory cache lifetime. `0` disables it |
+| `envref.log.level` | `info` | `error`, `warn`, `info` or `debug` |
+| `envref.namedSets` | `{}` | Named sets of references, for the terminal and `.env` commands |
 
 ## Security
 
 - Values live only in memory, for the configured TTL. Nothing is written to disk or to
   `SecretStorage` (except the `.env` you explicitly export).
-- No secret value is ever logged — the output channel only records variable names, secret
-  keys, profile, region and status.
-- Secrets are injected *after* VS Code's variable substitution, so a value containing
-  `${...}` is neither expanded nor leaked into the substitution engine.
-- Several variables pointing at the same secret cost a single `GetSecretValue` call.
+- No resolved value is ever logged — the output channel only records variable names, keys, the source
+  name and its configuration, and status.
+- Values are injected *after* VS Code's variable substitution, so one containing `${...}` is neither
+  expanded nor leaked into the substitution engine.
+- Several variables pointing at the same secret cost a single `GetSecretValue` call, and so do two
+  sources whose configuration is identical.
 
 ## Known caveat: schema warning
 
 Some debuggers ship a closed JSON schema, so `launch.json` may show
-`Property externalSecrets is not allowed`
-([microsoft/vscode#48844](https://github.com/microsoft/vscode/issues/48844)) — an extension
-can only contribute attributes for its own debug type. It is cosmetic: at runtime the extra
-attribute is valid per the DAP and the launch works with or without the extension.
+`Property envRef is not allowed`
+([microsoft/vscode#48844](https://github.com/microsoft/vscode/issues/48844)) — an extension can only
+contribute attributes for its own debug type. It is cosmetic: at runtime the extra attribute is valid
+per the DAP and the launch works with or without the extension.
 
 ## Development
 
 ```bash
 npm install
-npm run build            # bundle to dist/extension.js
-npm test                 # lint + typecheck + unit tests
-npm run test:integration  # VS Code test host
-npm run package          # .vsix
+npm run build             # bundle to dist/extension.js
+npm test                  # lint + typecheck + unit tests
+npm run test:integration  # build + VS Code test host
+npm run package           # .vsix
 ```
 
 `F5` in this repo opens an Extension Development Host with the extension loaded.

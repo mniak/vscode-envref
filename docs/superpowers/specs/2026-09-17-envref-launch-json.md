@@ -1,5 +1,12 @@
 # External Secrets for VS Code — Implementation Plan
 
+> **Superseded on the name and the block shape** by
+> `docs/superpowers/plans/2026-09-22-envref-rename-and-sources.md`, which renamed the extension to
+> **EnvRef** and replaced the `externalSecrets` block — one set of defaults, provider config spread
+> over the references — with an `envRef` block whose `vars` reference *named sources*. Read that plan
+> for the current design. Everything here about the DAP, the abort-on-failure rule, the cache and the
+> competing extensions still holds; the names and the block shape no longer do.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A VS Code extension that, when you run or debug an application, resolves AWS Secrets
