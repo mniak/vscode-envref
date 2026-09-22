@@ -4,6 +4,7 @@
 src/**
 test/**
 out/**
+docs/**
 node_modules/**
 esbuild.mjs
 tsconfig.json
