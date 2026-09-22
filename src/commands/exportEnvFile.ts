@@ -1,15 +1,15 @@
 import * as vscode from 'vscode';
-import { CommandDeps, collectSources, pickFolder, pickSource, resolveSource } from './sources';
+import { CommandDeps, collectSets, pickFolder, pickSet, resolveSet } from './sets';
 
 export async function exportEnvFile(deps: CommandDeps): Promise<void> {
   const folder = await pickFolder();
-  const source = await pickSource(collectSources(folder));
-  if (source === undefined) {
+  const set = await pickSet(collectSets(folder));
+  if (set === undefined) {
     return;
   }
 
   const target = await vscode.window.showSaveDialog({
-    title: 'Export resolved secrets',
+    title: 'Export resolved variables',
     saveLabel: 'Export',
     ...(folder === undefined ? {} : { defaultUri: vscode.Uri.joinPath(folder.uri, '.env') }),
     filters: { 'Environment file': ['env'] },
@@ -19,10 +19,10 @@ export async function exportEnvFile(deps: CommandDeps): Promise<void> {
   }
 
   const confirmed = await vscode.window.showWarningMessage(
-    'Write secret values to disk?',
+    'Write resolved values to disk?',
     {
       modal: true,
-      detail: `The resolved values of "${source.label}" will be written in plain text to ${target.fsPath} (permissions 0600). Never commit this file.`,
+      detail: `The resolved values of "${set.label}" will be written in plain text to ${target.fsPath} (permissions 0600). Never commit this file.`,
     },
     'Write file',
   );
@@ -30,7 +30,7 @@ export async function exportEnvFile(deps: CommandDeps): Promise<void> {
     return;
   }
 
-  const values = await resolveSource(source, deps);
+  const values = await resolveSet(set, deps);
   if (values === undefined) {
     return;
   }
@@ -41,7 +41,7 @@ export async function exportEnvFile(deps: CommandDeps): Promise<void> {
 
   deps.logger.info(`Exported ${values.size} variable(s) to ${target.fsPath}: ${[...values.keys()].join(', ')}.`);
   await offerGitignore(target, folder);
-  void vscode.window.showInformationMessage(`External Secrets: wrote ${values.size} variable(s) to ${target.fsPath}.`);
+  void vscode.window.showInformationMessage(`EnvRef: wrote ${values.size} variable(s) to ${target.fsPath}.`);
 }
 
 function quote(value: string): string {

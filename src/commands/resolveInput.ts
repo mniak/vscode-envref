@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ParseError, parseBlock } from '../refs/parse';
 import { reportError, reportFailures } from '../ui/errors';
 import { withStatus } from '../ui/progress';
-import { CommandDeps } from './sources';
+import { CommandDeps } from './sets';
 
 const VAR_NAME = 'value';
 
@@ -11,8 +11,8 @@ export async function resolveInput(deps: CommandDeps, args: unknown): Promise<st
 
   if (typeof args !== 'object' || args === null || Array.isArray(args)) {
     await reportError(
-      'External Secrets: input variable without arguments.',
-      'Pass the secret reference in "args", for example:\n"inputs": [{ "id": "dbPass", "type": "command", "command": "externalSecrets.resolveInput", "args": { "provider": "aws-sm", "key": "dev-ext/cards/db", "property": "password" } }]',
+      'EnvRef: input variable without arguments.',
+      'Pass the reference in "args", for example:\n"inputs": [{ "id": "dbPass", "type": "command", "command": "envref.resolveInput", "args": { "source": "dev", "key": "dev-ext/cards/db", "property": "password" } }]\nDeclare "dev" in the "envref.sources" setting.',
       deps.logger,
       folder,
     );
@@ -20,14 +20,18 @@ export async function resolveInput(deps: CommandDeps, args: unknown): Promise<st
   }
 
   const record = args as Record<string, unknown>;
-  const block = 'env' in record || 'envFrom' in record ? record : { env: { [VAR_NAME]: record } };
+  const block = 'vars' in record || 'varsFrom' in record ? record : { vars: { [VAR_NAME]: record } };
 
   let parsed;
   try {
-    parsed = parseBlock(block, deps.settings(folder), 'externalSecrets.resolveInput');
+    parsed = parseBlock(block, {
+      schemas: deps.resolver.schemas(),
+      settingsSources: deps.settingsSources(folder),
+      rootPath: 'envref.resolveInput',
+    });
   } catch (error) {
     if (error instanceof ParseError) {
-      await reportError('External Secrets: invalid input variable.', error.message, deps.logger, folder);
+      await reportError('EnvRef: invalid input variable.', error.message, deps.logger, folder);
       return undefined;
     }
     throw error;
@@ -35,24 +39,17 @@ export async function resolveInput(deps: CommandDeps, args: unknown): Promise<st
 
   if (parsed.refs.length !== 1 || parsed.bulk.length > 0) {
     await reportError(
-      'External Secrets: invalid input variable.',
-      'An input variable resolves exactly one secret reference.',
+      'EnvRef: invalid input variable.',
+      'An input variable resolves exactly one reference.',
       deps.logger,
       folder,
     );
     return undefined;
   }
 
-  const outcome = await withStatus('External Secrets: resolving input variable…', () =>
-    deps.resolver.resolve(parsed),
-  );
+  const outcome = await withStatus('EnvRef: resolving input variable…', () => deps.resolver.resolve(parsed));
   if (outcome.failures.length > 0) {
-    await reportFailures(
-      'External Secrets: could not resolve the input variable.',
-      outcome.failures,
-      deps.logger,
-      folder,
-    );
+    await reportFailures('EnvRef: could not resolve the input variable.', outcome.failures, deps.logger, folder);
     return undefined;
   }
 

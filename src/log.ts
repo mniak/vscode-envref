@@ -33,11 +33,13 @@ export class ChannelLogger implements Logger {
   }
 
   failure(failure: ResolveFailure): void {
-    const where = failure.varName === undefined ? failure.source : `${failure.source} → ${failure.varName}`;
-    const scope = [failure.profile && `profile=${failure.profile}`, failure.region && `region=${failure.region}`]
-      .filter(Boolean)
+    const where = failure.varName === undefined ? failure.path : `${failure.path} → ${failure.varName}`;
+    const config = Object.entries(failure.config)
+      .map(([key, value]) => `${key}=${value}`)
       .join(' ');
-    this.error(`${where}: [${failure.kind}] ${failure.message} (key=${failure.key}${scope ? ` ${scope}` : ''})`);
+    this.error(
+      `${where}: [${failure.kind}] ${failure.message} (source=${failure.sourceName} key=${failure.key}${config === '' ? '' : ` ${config}`})`,
+    );
   }
 
   private write(level: LogLevel, message: string): void {

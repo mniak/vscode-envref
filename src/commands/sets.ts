@@ -1,18 +1,18 @@
 import * as vscode from 'vscode';
 import { ChannelLogger } from '../log';
 import { ParseError, parseBlock } from '../refs/parse';
-import { SecretResolver } from '../resolve/resolver';
-import { BlockDefaults } from '../types';
+import { EnvRefResolver } from '../resolve/resolver';
+import { SourceMap } from '../types';
 import { reportError, reportFailures } from '../ui/errors';
 import { withStatus } from '../ui/progress';
 
 export interface CommandDeps {
-  resolver: SecretResolver;
+  resolver: EnvRefResolver;
   logger: ChannelLogger;
-  settings(folder: vscode.WorkspaceFolder | undefined): BlockDefaults;
+  settingsSources(folder: vscode.WorkspaceFolder | undefined): SourceMap;
 }
 
-export interface SecretSource {
+export interface VarSet {
   label: string;
   description: string;
   block: unknown;
@@ -27,14 +27,14 @@ export async function pickFolder(): Promise<vscode.WorkspaceFolder | undefined> 
   return vscode.window.showWorkspaceFolderPick({ placeHolder: 'Which folder?' });
 }
 
-export function collectSources(folder: vscode.WorkspaceFolder | undefined): SecretSource[] {
-  const sources: SecretSource[] = [];
+export function collectSets(folder: vscode.WorkspaceFolder | undefined): VarSet[] {
+  const sets: VarSet[] = [];
 
   const namedSets = vscode.workspace
-    .getConfiguration('externalSecrets', folder ?? null)
-    .get<Record<string, unknown>>('terminal.namedSets', {});
+    .getConfiguration('envref', folder ?? null)
+    .get<Record<string, unknown>>('namedSets', {});
   for (const [name, block] of Object.entries(namedSets)) {
-    sources.push({ label: name, description: 'named set', block, folder });
+    sets.push({ label: name, description: 'named set', block, folder });
   }
 
   const configurations = vscode.workspace
@@ -45,11 +45,11 @@ export function collectSources(folder: vscode.WorkspaceFolder | undefined): Secr
       continue;
     }
     const record = configuration as Record<string, unknown>;
-    const block = record['externalSecrets'];
+    const block = record['envRef'];
     if (block === undefined) {
       continue;
     }
-    sources.push({
+    sets.push({
       label: typeof record['name'] === 'string' ? record['name'] : '(unnamed configuration)',
       description: 'launch configuration',
       block,
@@ -57,55 +57,56 @@ export function collectSources(folder: vscode.WorkspaceFolder | undefined): Secr
     });
   }
 
-  return sources;
+  return sets;
 }
 
-export async function pickSource(sources: SecretSource[]): Promise<SecretSource | undefined> {
-  if (sources.length === 0) {
+export async function pickSet(sets: VarSet[]): Promise<VarSet | undefined> {
+  if (sets.length === 0) {
     void vscode.window.showWarningMessage(
-      'External Secrets: no launch configuration with an "externalSecrets" block and no named set in settings.',
+      'EnvRef: no launch configuration with an "envRef" block and no named set in settings.',
     );
     return undefined;
   }
-  if (sources.length === 1) {
-    return sources[0];
+  if (sets.length === 1) {
+    return sets[0];
   }
   const picked = await vscode.window.showQuickPick(
-    sources.map((source) => ({ label: source.label, description: source.description, source })),
-    { placeHolder: 'Which set of secrets?' },
+    sets.map((set) => ({ label: set.label, description: set.description, set })),
+    { placeHolder: 'Which set of variables?' },
   );
-  return picked?.source;
+  return picked?.set;
 }
 
-export async function resolveSource(
-  source: SecretSource,
-  deps: CommandDeps,
-): Promise<Map<string, string> | undefined> {
+export async function resolveSet(set: VarSet, deps: CommandDeps): Promise<Map<string, string> | undefined> {
   let parsed;
   try {
-    parsed = parseBlock(source.block, deps.settings(source.folder), `externalSecrets (${source.label})`);
+    parsed = parseBlock(set.block, {
+      schemas: deps.resolver.schemas(),
+      settingsSources: deps.settingsSources(set.folder),
+      rootPath: `envRef (${set.label})`,
+    });
   } catch (error) {
     if (error instanceof ParseError) {
       await reportError(
-        `External Secrets: invalid configuration in "${source.label}".`,
+        `EnvRef: invalid configuration in "${set.label}".`,
         error.message,
         deps.logger,
-        source.folder,
+        set.folder,
       );
       return undefined;
     }
     throw error;
   }
 
-  const outcome = await withStatus(`External Secrets: resolving secrets for "${source.label}"…`, () =>
+  const outcome = await withStatus(`EnvRef: resolving variables for "${set.label}"…`, () =>
     deps.resolver.resolve(parsed),
   );
   if (outcome.failures.length > 0) {
     await reportFailures(
-      `External Secrets: could not resolve ${outcome.failures.length} secret(s) for "${source.label}".`,
+      `EnvRef: could not resolve ${outcome.failures.length} variable(s) for "${set.label}".`,
       outcome.failures,
       deps.logger,
-      source.folder,
+      set.folder,
     );
     return undefined;
   }

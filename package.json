@@ -1,13 +1,13 @@
 {
-  "name": "vscode-external-secrets",
-  "displayName": "External Secrets",
-  "description": "Resolve secrets from a secrets manager into environment variables when you run or debug, mapped per variable in launch.json.",
+  "name": "vscode-envref",
+  "displayName": "EnvRef",
+  "description": "Resolve environment variables from named sources — AWS Secrets Manager today, any vault or file tomorrow — when you run or debug.",
   "version": "0.1.0",
   "publisher": "mniak",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mniak/vscode-external-secrets.git"
+    "url": "https://github.com/mniak/vscode-envref.git"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -17,62 +17,54 @@
     "Other"
   ],
   "keywords": [
-    "secrets",
+    "environment variables",
+    "launch.json",
     "aws",
     "secrets manager",
-    "environment variables",
-    "external secrets"
+    "debug"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
     "onDebug",
-    "onCommand:externalSecrets.resolveInput"
+    "onCommand:envref.resolveInput"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "externalSecrets.clearCache",
-        "title": "External Secrets: Clear Cache"
+        "command": "envref.clearCache",
+        "title": "EnvRef: Clear Cache"
       },
       {
-        "command": "externalSecrets.openTerminal",
-        "title": "External Secrets: Open Terminal With Secrets"
+        "command": "envref.openTerminal",
+        "title": "EnvRef: Open Terminal With Variables"
       },
       {
-        "command": "externalSecrets.exportEnvFile",
-        "title": "External Secrets: Export .env File"
+        "command": "envref.exportEnvFile",
+        "title": "EnvRef: Export .env File"
       },
       {
-        "command": "externalSecrets.showLog",
-        "title": "External Secrets: Show Log"
+        "command": "envref.showLog",
+        "title": "EnvRef: Show Log"
       }
     ],
     "configuration": {
-      "title": "External Secrets",
+      "title": "EnvRef",
       "properties": {
-        "externalSecrets.aws.profile": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "default": null,
-          "description": "Default AWS profile used when a reference or launch configuration does not specify one. When unset, the AWS SDK credential chain is used."
+        "envref.sources": {
+          "type": "object",
+          "default": {},
+          "description": "Named sources reusable from any launch configuration. Each entry sets \"provider\" plus that provider's own configuration, for example { \"dev\": { \"provider\": \"aws-sm\", \"profile\": \"dev-ext\", \"region\": \"us-east-1\" } }. A source declared in an envRef block shadows one of the same name here.",
+          "additionalProperties": {
+            "type": "object"
+          }
         },
-        "externalSecrets.aws.region": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "default": null,
-          "description": "Default AWS region used when a reference or launch configuration does not specify one. When unset, the region comes from the AWS profile or environment."
-        },
-        "externalSecrets.cache.ttlSeconds": {
+        "envref.cache.ttlSeconds": {
           "type": "number",
           "default": 300,
           "minimum": 0,
-          "description": "How long resolved secrets stay in the in-memory cache. Values are never written to disk. Set to 0 to disable caching."
+          "description": "How long resolved values stay in the in-memory cache. Values are never written to disk. Set to 0 to disable caching."
         },
-        "externalSecrets.log.level": {
+        "envref.log.level": {
           "type": "string",
           "enum": [
             "error",
@@ -81,12 +73,12 @@
             "debug"
           ],
           "default": "info",
-          "description": "Verbosity of the External Secrets output channel. Secret values are never logged at any level."
+          "description": "Verbosity of the EnvRef output channel. Resolved values are never logged at any level."
         },
-        "externalSecrets.terminal.namedSets": {
+        "envref.namedSets": {
           "type": "object",
           "default": {},
-          "description": "Named sets of secret references, usable by the terminal and .env export commands. Each value has the same shape as the externalSecrets block of a launch configuration.",
+          "description": "Named sets of references, usable by the terminal and .env export commands. Each value has the same shape as the envRef block of a launch configuration.",
           "additionalProperties": {
             "type": "object"
           }

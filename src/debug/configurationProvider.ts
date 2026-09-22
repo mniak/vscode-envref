@@ -2,20 +2,20 @@ import * as vscode from 'vscode';
 import { ChannelLogger } from '../log';
 import { mergeValues } from '../refs/merge';
 import { ParseError, parseBlock } from '../refs/parse';
-import { SecretResolver } from '../resolve/resolver';
-import { BlockDefaults } from '../types';
+import { EnvRefResolver } from '../resolve/resolver';
+import { SourceMap } from '../types';
 import { reportError, reportFailures } from '../ui/errors';
 import { withStatus } from '../ui/progress';
 
-export const BLOCK_KEY = 'externalSecrets';
+export const BLOCK_KEY = 'envRef';
 
 export interface ConfigurationProviderDeps {
-  resolver: SecretResolver;
+  resolver: EnvRefResolver;
   logger: ChannelLogger;
-  settings(folder: vscode.WorkspaceFolder | undefined): BlockDefaults;
+  settingsSources(folder: vscode.WorkspaceFolder | undefined): SourceMap;
 }
 
-export class ExternalSecretsConfigurationProvider implements vscode.DebugConfigurationProvider {
+export class EnvRefConfigurationProvider implements vscode.DebugConfigurationProvider {
   constructor(private readonly deps: ConfigurationProviderDeps) {}
 
   async resolveDebugConfigurationWithSubstitutedVariables(
@@ -32,25 +32,26 @@ export class ExternalSecretsConfigurationProvider implements vscode.DebugConfigu
 
     const { logger, resolver } = this.deps;
     const label = `launch config "${config.name}"`;
-    logger.info(`Resolving external secrets for ${label}.`);
+    logger.info(`Resolving envRef variables for ${label}.`);
 
     let parsed;
     try {
-      parsed = parseBlock(block, this.deps.settings(folder));
+      parsed = parseBlock(block, {
+        schemas: resolver.schemas(),
+        settingsSources: this.deps.settingsSources(folder),
+      });
     } catch (error) {
       if (error instanceof ParseError) {
-        await reportError(`External Secrets: invalid configuration in ${label}.`, error.message, logger, folder);
+        await reportError(`EnvRef: invalid configuration in ${label}.`, error.message, logger, folder);
         return undefined;
       }
       throw error;
     }
 
-    const outcome = await withStatus(`External Secrets: resolving secrets for ${label}…`, () =>
-      resolver.resolve(parsed),
-    );
+    const outcome = await withStatus(`EnvRef: resolving variables for ${label}…`, () => resolver.resolve(parsed));
     if (outcome.failures.length > 0) {
       await reportFailures(
-        `External Secrets: could not resolve ${outcome.failures.length} secret(s) for ${label}. The session was not started.`,
+        `EnvRef: could not resolve ${outcome.failures.length} variable(s) for ${label}. The session was not started.`,
         outcome.failures,
         logger,
         folder,

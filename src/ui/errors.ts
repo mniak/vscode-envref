@@ -32,7 +32,7 @@ export async function reportFailures(
 
   const choice = await vscode.window.showErrorMessage(title, { modal: true, detail }, ...actions);
   if (choice === SSO_LOGIN) {
-    runSsoLogin(authFailure?.profile);
+    runSsoLogin(authFailure?.config['profile']);
     return;
   }
   if (choice === OPEN_LAUNCH) {
@@ -89,8 +89,5 @@ export async function openLaunchJson(folder?: vscode.WorkspaceFolder, needle?: s
 
 function describe(failure: ResolveFailure): string {
   const subject = failure.varName === undefined ? failure.key : `${failure.varName} (${failure.key})`;
-  const scope = [failure.profile && `profile ${failure.profile}`, failure.region && `region ${failure.region}`]
-    .filter(Boolean)
-    .join(', ');
-  return `• ${subject}${scope === '' ? '' : ` [${scope}]`}: ${failure.message}`;
+  return `• ${subject} [source ${failure.sourceName}]: ${failure.message}`;
 }
