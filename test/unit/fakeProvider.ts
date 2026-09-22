@@ -1,4 +1,5 @@
 import { FetchRequest, FetchedSecret, ProviderError, SecretProvider } from '../../src/providers/provider';
+import { ProviderSchema } from '../../src/refs/parse';
 import { FailureKind, ProviderId } from '../../src/types';
 
 export interface FakeEntry {
@@ -9,6 +10,7 @@ export interface FakeEntry {
 
 export class FakeProvider implements SecretProvider {
   readonly id: ProviderId = 'aws-sm';
+  readonly configKeys = ['profile', 'region'] as const;
   readonly calls: FetchRequest[] = [];
 
   constructor(private readonly entries: Record<string, FakeEntry>) {}
@@ -36,3 +38,5 @@ export class FakeProvider implements SecretProvider {
 export function providers(provider: SecretProvider): Map<ProviderId, SecretProvider> {
   return new Map<ProviderId, SecretProvider>([[provider.id, provider]]);
 }
+
+export const schemas = new Map<ProviderId, ProviderSchema>([['aws-sm', { configKeys: ['profile', 'region'] }]]);

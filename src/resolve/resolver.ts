@@ -1,12 +1,14 @@
 import { FetchRequest, FetchedSecret, ProviderError, SecretProvider } from '../providers/provider';
+import { ProviderSchema } from '../refs/parse';
 import {
+  BulkRef,
   Logger,
   ParsedBlock,
   ProviderId,
   ResolveFailure,
   ResolveOutcome,
-  SecretBulkRef,
-  SecretRef,
+  SourceConfig,
+  VarRef,
   silentLogger,
 } from '../types';
 
@@ -23,7 +25,7 @@ export interface ResolverOptions {
   logger?: Logger;
 }
 
-export class SecretResolver {
+export class EnvRefResolver {
   private readonly cache = new Map<string, CacheEntry>();
   private readonly now: () => number;
   private readonly logger: Logger;
@@ -47,17 +49,25 @@ export class SecretResolver {
     this.logger.info('Cache cleared.');
   }
 
+  schemas(): Map<ProviderId, ProviderSchema> {
+    const map = new Map<ProviderId, ProviderSchema>();
+    for (const [id, provider] of this.providers) {
+      map.set(id, { configKeys: provider.configKeys });
+    }
+    return map;
+  }
+
   async resolve(block: ParsedBlock): Promise<ResolveOutcome> {
     const values = new Map<string, string>();
     const failures: ResolveFailure[] = [];
 
     const single = block.refs.map(async (ref) => {
       try {
-        const secret = await this.fetch(ref.provider, requestOf(ref));
+        const secret = await this.fetch(ref.source, requestOf(ref));
         values.set(ref.varName, extract(ref, secret));
         this.logger.debug(`Resolved ${ref.varName} from ${ref.key}${ref.property ? `#${ref.property}` : ''}.`);
       } catch (error) {
-        const failure = toFailure(error, ref.source, ref.key, ref.profile, ref.region, ref.varName);
+        const failure = toFailure(error, ref, ref.varName);
         if (failure.kind === 'not-found' && ref.fallback !== undefined) {
           values.set(ref.varName, ref.fallback);
           this.logger.warn(`${ref.varName}: ${failure.message} — using the configured default.`);
@@ -69,13 +79,13 @@ export class SecretResolver {
 
     const bulk = block.bulk.map(async (entry) => {
       try {
-        const secret = await this.fetch(entry.provider, requestOf(entry));
+        const secret = await this.fetch(entry.source, requestOf(entry));
         for (const [name, value] of expand(entry, secret)) {
           values.set(name, value);
         }
         this.logger.debug(`Expanded ${entry.key} into environment variables.`);
       } catch (error) {
-        failures.push(toFailure(error, entry.source, entry.key, entry.profile, entry.region));
+        failures.push(toFailure(error, entry));
       }
     });
 
@@ -83,16 +93,15 @@ export class SecretResolver {
     return { values, failures };
   }
 
-  private fetch(providerId: ProviderId, request: FetchRequest): Promise<FetchedSecret> {
-    const provider = this.providers.get(providerId);
+  private fetch(source: SourceConfig, request: FetchRequest): Promise<FetchedSecret> {
+    const provider = this.providers.get(source.provider);
     if (provider === undefined) {
-      return Promise.reject(new ProviderError('invalid', `No provider registered for "${providerId}".`));
+      return Promise.reject(new ProviderError('invalid', `No provider registered for "${source.provider}".`));
     }
 
     const cacheKey = JSON.stringify([
-      providerId,
-      request.profile ?? '',
-      request.region ?? '',
+      source.provider,
+      Object.entries(source.config).sort(([a], [b]) => a.localeCompare(b)),
       request.key,
       request.versionStage ?? '',
       request.versionId ?? '',
@@ -112,13 +121,12 @@ export class SecretResolver {
   }
 }
 
-function requestOf(ref: SecretRef | SecretBulkRef): FetchRequest {
+function requestOf(ref: VarRef | BulkRef): FetchRequest {
   return {
     key: ref.key,
-    profile: ref.profile,
-    region: ref.region,
-    versionStage: ref.versionStage,
-    versionId: ref.versionId,
+    config: ref.source.config,
+    ...(ref.versionStage === undefined ? {} : { versionStage: ref.versionStage }),
+    ...(ref.versionId === undefined ? {} : { versionId: ref.versionId }),
   };
 }
 
@@ -129,7 +137,7 @@ function decode(secret: FetchedSecret, encoding: 'utf8' | 'base64'): string {
   return Buffer.from(secret.value).toString(encoding);
 }
 
-function extract(ref: SecretRef, secret: FetchedSecret): string {
+function extract(ref: VarRef, secret: FetchedSecret): string {
   if (ref.property === undefined) {
     return decode(secret, ref.encoding);
   }
@@ -147,7 +155,7 @@ function extract(ref: SecretRef, secret: FetchedSecret): string {
   return stringify(found);
 }
 
-function expand(entry: SecretBulkRef, secret: FetchedSecret): Array<[string, string]> {
+function expand(entry: BulkRef, secret: FetchedSecret): Array<[string, string]> {
   const document = parseJson(decode(secret, 'utf8'), entry.key);
   const prefix = entry.prefix ?? '';
   const result: Array<[string, string]> = [];
@@ -161,7 +169,7 @@ function expand(entry: SecretBulkRef, secret: FetchedSecret): Array<[string, str
       throw new ProviderError(
         'invalid',
         `Field "${field}" of secret "${entry.key}" does not make a valid environment variable name ("${name}").`,
-        'Use "env" with explicit variable names instead of "envFrom" for this secret.',
+        'Use "vars" with explicit variable names instead of "varsFrom" for this secret.',
       );
     }
     result.push([name, stringify(value)]);
@@ -178,7 +186,7 @@ function parseJson(text: string, key: string): Record<string, unknown> {
     throw new ProviderError(
       'invalid',
       `Secret "${key}" is not JSON, so its fields cannot be read.`,
-      'Drop "property"/"envFrom" to use the whole secret value.',
+      'Drop "property"/"varsFrom" to use the whole secret value.',
     );
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -217,32 +225,20 @@ function stringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function toFailure(
-  error: unknown,
-  source: string,
-  key: string,
-  profile?: string,
-  region?: string,
-  varName?: string,
-): ResolveFailure {
+function toFailure(error: unknown, ref: VarRef | BulkRef, varName?: string): ResolveFailure {
+  const base = {
+    path: ref.path,
+    key: ref.key,
+    sourceName: ref.sourceName,
+    config: ref.source.config,
+    ...(varName === undefined ? {} : { varName }),
+  };
   if (error instanceof ProviderError) {
     return {
+      ...base,
       kind: error.kind,
       message: error.hint === undefined ? error.message : `${error.message} ${error.hint}`,
-      source,
-      varName,
-      key,
-      profile,
-      region,
     };
   }
-  return {
-    kind: 'other',
-    message: error instanceof Error ? error.message : String(error),
-    source,
-    varName,
-    key,
-    profile,
-    region,
-  };
+  return { ...base, kind: 'other', message: error instanceof Error ? error.message : String(error) };
 }
