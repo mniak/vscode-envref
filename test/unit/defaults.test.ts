@@ -1,28 +1,46 @@
 import { describe, expect, it } from 'vitest';
-import { blockDefaultsFrom } from '../../src/config/defaults';
+import { sourcesFromSettings } from '../../src/config/defaults';
+import { ProviderSchema } from '../../src/refs/parse';
+import { ProviderId } from '../../src/types';
 
-describe('blockDefaultsFrom', () => {
-  it('keeps non-empty strings', () => {
-    expect(blockDefaultsFrom('dev-ext', 'us-east-1')).toEqual({ profile: 'dev-ext', region: 'us-east-1' });
+const schemas = new Map<ProviderId, ProviderSchema>([['aws-sm', { configKeys: ['profile', 'region'] }]]);
+
+describe('sourcesFromSettings', () => {
+  it('keeps well-formed entries', () => {
+    expect(
+      sourcesFromSettings({ dev: { provider: 'aws-sm', profile: 'dev-ext', region: 'us-east-1' } }, schemas),
+    ).toEqual({ dev: { provider: 'aws-sm', config: { profile: 'dev-ext', region: 'us-east-1' } } });
   });
 
-  it('drops null, which is what the settings default resolves to', () => {
-    expect(blockDefaultsFrom(null, null)).toEqual({});
-    expect(blockDefaultsFrom(null, 'us-east-1')).toEqual({ region: 'us-east-1' });
-    expect(blockDefaultsFrom('dev-ext', null)).toEqual({ profile: 'dev-ext' });
+  it('keeps an entry that sets no provider config at all', () => {
+    expect(sourcesFromSettings({ chain: { provider: 'aws-sm' } }, schemas)).toEqual({
+      chain: { provider: 'aws-sm', config: {} },
+    });
   });
 
-  it('drops undefined, empty and blank values', () => {
-    expect(blockDefaultsFrom(undefined, undefined)).toEqual({});
-    expect(blockDefaultsFrom('', '')).toEqual({});
-    expect(blockDefaultsFrom('   ', '\t')).toEqual({});
+  it('drops entries with an unknown provider instead of throwing', () => {
+    expect(sourcesFromSettings({ v: { provider: 'vault', address: 'https://x' } }, schemas)).toEqual({});
   });
 
-  it('drops values that are not strings', () => {
-    expect(blockDefaultsFrom(42, true)).toEqual({});
+  it('drops entries without a usable provider', () => {
+    expect(sourcesFromSettings({ a: { profile: 'x' }, b: { provider: '  ' }, c: 'nope' }, schemas)).toEqual({});
   });
 
-  it('never sets the keys it drops', () => {
-    expect(Object.keys(blockDefaultsFrom(null, null))).toEqual([]);
+  it('ignores fields the provider does not accept', () => {
+    expect(sourcesFromSettings({ dev: { provider: 'aws-sm', profile: 'dev-ext', nope: 'x' } }, schemas)).toEqual({
+      dev: { provider: 'aws-sm', config: { profile: 'dev-ext' } },
+    });
+  });
+
+  it('drops blank and non-string config values', () => {
+    expect(sourcesFromSettings({ dev: { provider: 'aws-sm', profile: '   ', region: 42 } }, schemas)).toEqual({
+      dev: { provider: 'aws-sm', config: {} },
+    });
+  });
+
+  it('returns an empty map for anything that is not an object', () => {
+    expect(sourcesFromSettings(undefined, schemas)).toEqual({});
+    expect(sourcesFromSettings(null, schemas)).toEqual({});
+    expect(sourcesFromSettings([], schemas)).toEqual({});
   });
 });
