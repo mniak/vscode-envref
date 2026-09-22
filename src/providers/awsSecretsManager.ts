@@ -11,6 +11,7 @@ export interface AwsSecretsManagerOptions {
 
 export class AwsSecretsManagerProvider implements SecretProvider {
   readonly id: ProviderId = 'aws-sm';
+  readonly configKeys = ['profile', 'region'] as const;
 
   private readonly factory: SecretsManagerClientFactory;
   private readonly logger: Logger;
@@ -27,9 +28,11 @@ export class AwsSecretsManagerProvider implements SecretProvider {
   }
 
   scopeOf(request: FetchRequest): ClientScope {
+    const profile = request.config['profile'] ?? this.defaults.profile;
+    const region = request.config['region'] ?? this.defaults.region;
     return {
-      profile: request.profile ?? this.defaults.profile,
-      region: request.region ?? this.defaults.region,
+      ...(profile === undefined ? {} : { profile }),
+      ...(region === undefined ? {} : { region }),
     };
   }
 

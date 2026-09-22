@@ -1,46 +1,43 @@
-export type ProviderId = 'aws-sm';
-
-export const SUPPORTED_PROVIDERS: ProviderId[] = ['aws-sm'];
+export type ProviderId = string;
 
 export type Encoding = 'utf8' | 'base64';
 
 export type EnvTarget = 'env' | 'environment';
 
-export interface SecretRef {
-  varName: string;
+export interface SourceConfig {
   provider: ProviderId;
+  config: Record<string, string>;
+}
+
+export type SourceMap = Record<string, SourceConfig>;
+
+export interface VarRef {
+  varName: string;
+  sourceName: string;
+  source: SourceConfig;
   key: string;
   property?: string;
-  profile?: string;
-  region?: string;
   versionStage?: string;
   versionId?: string;
   fallback?: string;
   encoding: Encoding;
-  source: string;
+  path: string;
 }
 
-export interface SecretBulkRef {
-  provider: ProviderId;
+export interface BulkRef {
+  sourceName: string;
+  source: SourceConfig;
   key: string;
   prefix?: string;
-  profile?: string;
-  region?: string;
   versionStage?: string;
   versionId?: string;
-  source: string;
+  path: string;
 }
 
 export interface ParsedBlock {
-  refs: SecretRef[];
-  bulk: SecretBulkRef[];
+  refs: VarRef[];
+  bulk: BulkRef[];
   target?: EnvTarget;
-}
-
-export interface BlockDefaults {
-  provider?: ProviderId;
-  profile?: string;
-  region?: string;
 }
 
 export type FailureKind = 'auth' | 'access-denied' | 'not-found' | 'invalid' | 'other';
@@ -48,11 +45,11 @@ export type FailureKind = 'auth' | 'access-denied' | 'not-found' | 'invalid' | '
 export interface ResolveFailure {
   kind: FailureKind;
   message: string;
-  source: string;
+  path: string;
   varName?: string;
   key: string;
-  profile?: string;
-  region?: string;
+  sourceName: string;
+  config: Record<string, string>;
 }
 
 export interface ResolveOutcome {

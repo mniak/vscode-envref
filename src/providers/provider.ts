@@ -2,8 +2,7 @@ import { FailureKind, ProviderId } from '../types';
 
 export interface FetchRequest {
   key: string;
-  profile?: string;
-  region?: string;
+  config: Record<string, string>;
   versionStage?: string;
   versionId?: string;
 }
@@ -14,6 +13,7 @@ export type FetchedSecret =
 
 export interface SecretProvider {
   readonly id: ProviderId;
+  readonly configKeys: readonly string[];
   fetch(request: FetchRequest): Promise<FetchedSecret>;
 }
 
