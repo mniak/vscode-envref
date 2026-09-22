@@ -1,14 +1,23 @@
 {
   "name": "vscode-envref",
-  "displayName": "EnvRef",
-  "description": "Resolve environment variables from named sources — AWS Secrets Manager today, any vault or file tomorrow — when you run or debug.",
+  "displayName": "EnvRef — Secrets as Env Vars",
+  "description": "Reference secrets in launch.json instead of pasting them. Resolved from AWS Secrets Manager with your local credentials when you press F5.",
   "version": "0.1.0",
   "publisher": "mniak",
   "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1F2428",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/mniak/vscode-envref.git"
   },
+  "bugs": {
+    "url": "https://github.com/mniak/vscode-envref/issues"
+  },
+  "homepage": "https://github.com/mniak/vscode-envref#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -18,9 +27,14 @@
   ],
   "keywords": [
     "environment variables",
+    "secrets",
     "launch.json",
+    "launch configuration",
     "aws",
     "secrets manager",
+    "secretsmanager",
+    "vault",
+    "dotenv",
     "debug"
   ],
   "main": "./dist/extension.js",

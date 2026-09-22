@@ -1,4 +1,18 @@
-# EnvRef for VS Code
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/mniak/vscode-envref/main/images/icon.png" alt="EnvRef" width="112" height="112">
+
+# EnvRef
+
+**Reference secrets in `launch.json` instead of pasting them.**
+Resolved from a named source with your local credentials, at the moment you press `F5`.
+
+[![CI](https://github.com/mniak/vscode-envref/actions/workflows/ci.yml/badge.svg)](https://github.com/mniak/vscode-envref/actions/workflows/ci.yml)
+[![Marketplace](https://img.shields.io/visual-studio-marketplace/v/mniak.vscode-envref?label=marketplace)](https://marketplace.visualstudio.com/items?itemName=mniak.vscode-envref)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/mniak.vscode-envref)](https://marketplace.visualstudio.com/items?itemName=mniak.vscode-envref)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+</div>
 
 Keep values out of `launch.json`. Reference them instead, and let the extension fetch them from
 a named source with your local credentials at the moment you hit `F5`.

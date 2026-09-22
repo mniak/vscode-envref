@@ -5,6 +5,7 @@ src/**
 test/**
 out/**
 docs/**
+images/*.svg
 node_modules/**
 esbuild.mjs
 tsconfig.json
