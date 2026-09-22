@@ -1,12 +1,12 @@
 import {
-  BlockDefaults,
+  BulkRef,
   Encoding,
   EnvTarget,
   ParsedBlock,
   ProviderId,
-  SUPPORTED_PROVIDERS,
-  SecretBulkRef,
-  SecretRef,
+  SourceConfig,
+  SourceMap,
+  VarRef,
 } from '../types';
 
 export interface ParseIssue {
@@ -21,9 +21,19 @@ export class ParseError extends Error {
   }
 }
 
-const BLOCK_KEYS = ['provider', 'profile', 'region', 'versionStage', 'versionId', 'env', 'envFrom', 'target'];
-const REF_KEYS = ['provider', 'key', 'property', 'profile', 'region', 'versionStage', 'versionId', 'default', 'encoding'];
-const BULK_KEYS = ['provider', 'key', 'prefix', 'profile', 'region', 'versionStage', 'versionId'];
+export interface ProviderSchema {
+  configKeys: readonly string[];
+}
+
+export interface ParseOptions {
+  schemas: Map<ProviderId, ProviderSchema>;
+  settingsSources?: SourceMap;
+  rootPath?: string;
+}
+
+const BLOCK_KEYS = ['sources', 'vars', 'varsFrom', 'target'];
+const REF_KEYS = ['source', 'key', 'property', 'versionStage', 'versionId', 'default', 'encoding'];
+const BULK_KEYS = ['source', 'key', 'prefix', 'versionStage', 'versionId'];
 
 type Rec = Record<string, unknown>;
 
@@ -56,25 +66,83 @@ class IssueCollector {
       }
     }
   }
+}
 
-  provider(path: string, value: unknown, fallback: ProviderId | undefined): ProviderId | undefined {
-    const raw = this.string(path, value, 'provider');
-    if (raw === undefined) {
-      if (value !== undefined && value !== null) {
-        return undefined;
-      }
-      if (fallback === undefined) {
-        this.add(path, 'missing "provider" (set it on the reference or on the externalSecrets block)');
-        return undefined;
-      }
-      return fallback;
-    }
-    if (!SUPPORTED_PROVIDERS.includes(raw as ProviderId)) {
-      this.add(`${path}.provider`, `unsupported provider "${raw}", expected one of: ${SUPPORTED_PROVIDERS.join(', ')}`);
-      return undefined;
-    }
-    return raw as ProviderId;
+function parseSources(
+  collector: IssueCollector,
+  path: string,
+  raw: unknown,
+  schemas: Map<ProviderId, ProviderSchema>,
+): SourceMap {
+  if (!isRecord(raw)) {
+    collector.add(path, 'must be an object mapping source names to provider configuration');
+    return {};
   }
+
+  const map: SourceMap = {};
+  for (const [name, entry] of Object.entries(raw)) {
+    const entryPath = `${path}.${name}`;
+    if (!isRecord(entry)) {
+      collector.add(entryPath, 'must be an object such as { "provider": "aws-sm", "profile": "dev-ext" }');
+      continue;
+    }
+
+    const provider = collector.string(entryPath, entry.provider, 'provider');
+    if (provider === undefined) {
+      if (entry.provider === undefined) {
+        collector.add(entryPath, 'missing "provider"');
+      }
+      continue;
+    }
+
+    const schema = schemas.get(provider);
+    if (schema === undefined) {
+      const known = [...schemas.keys()].join(', ');
+      collector.add(
+        `${entryPath}.provider`,
+        `unknown provider "${provider}", registered providers are: ${known === '' ? '(none)' : known}`,
+      );
+      continue;
+    }
+
+    collector.unknownKeys(entryPath, entry, ['provider', ...schema.configKeys]);
+
+    const config: Record<string, string> = {};
+    for (const key of schema.configKeys) {
+      const value = collector.string(entryPath, entry[key], key);
+      if (value !== undefined) {
+        config[key] = value;
+      }
+    }
+    map[name] = { provider, config };
+  }
+  return map;
+}
+
+function bindSource(
+  collector: IssueCollector,
+  path: string,
+  raw: Rec,
+  sources: SourceMap,
+): { sourceName: string; source: SourceConfig } | undefined {
+  const name = collector.string(path, raw.source, 'source');
+  if (name === undefined) {
+    if (raw.source === undefined) {
+      collector.add(path, 'missing "source" (the name of an entry in "sources")');
+    }
+    return undefined;
+  }
+
+  const source = sources[name];
+  if (source === undefined) {
+    const declared = Object.keys(sources).join(', ');
+    collector.add(
+      `${path}.source`,
+      `unknown source "${name}", declared sources are: ${declared === '' ? '(none)' : declared}`,
+    );
+    return undefined;
+  }
+  return { sourceName: name, source };
 }
 
 function parseRef(
@@ -82,12 +150,12 @@ function parseRef(
   path: string,
   varName: string,
   raw: unknown,
-  defaults: BlockDefaults,
-): SecretRef | undefined {
+  sources: SourceMap,
+): VarRef | undefined {
   if (typeof raw === 'string') {
     collector.add(
       path,
-      'must be an object such as { "provider": "aws-sm", "key": "my/secret", "property": "password" }; plain strings belong in "env"',
+      'must be an object such as { "source": "dev", "key": "my/secret", "property": "password" }; plain strings belong in "env"',
     );
     return undefined;
   }
@@ -98,15 +166,13 @@ function parseRef(
 
   collector.unknownKeys(path, raw, REF_KEYS);
 
-  const provider = collector.provider(path, raw.provider, defaults.provider);
+  const bound = bindSource(collector, path, raw, sources);
   const key = collector.string(path, raw.key, 'key');
   if (key === undefined && raw.key === undefined) {
     collector.add(path, 'missing "key" (the secret name or ARN)');
   }
 
   const property = collector.string(path, raw.property, 'property');
-  const profile = collector.string(path, raw.profile, 'profile') ?? defaults.profile;
-  const region = collector.string(path, raw.region, 'region') ?? defaults.region;
   const versionStage = collector.string(path, raw.versionStage, 'versionStage');
   const versionId = collector.string(path, raw.versionId, 'versionId');
 
@@ -128,22 +194,21 @@ function parseRef(
     }
   }
 
-  if (provider === undefined || key === undefined) {
+  if (bound === undefined || key === undefined) {
     return undefined;
   }
 
   return {
     varName,
-    provider,
+    sourceName: bound.sourceName,
+    source: bound.source,
     key,
-    property,
-    profile,
-    region,
-    versionStage,
-    versionId,
-    fallback,
+    ...(property === undefined ? {} : { property }),
+    ...(versionStage === undefined ? {} : { versionStage }),
+    ...(versionId === undefined ? {} : { versionId }),
+    ...(fallback === undefined ? {} : { fallback }),
     encoding,
-    source: path,
+    path,
   };
 }
 
@@ -151,39 +216,41 @@ function parseBulkRef(
   collector: IssueCollector,
   path: string,
   raw: unknown,
-  defaults: BlockDefaults,
-): SecretBulkRef | undefined {
+  sources: SourceMap,
+): BulkRef | undefined {
   if (!isRecord(raw)) {
-    collector.add(path, 'must be an object such as { "key": "my/secret", "prefix": "DB_" }');
+    collector.add(path, 'must be an object such as { "source": "dev", "key": "my/secret", "prefix": "DB_" }');
     return undefined;
   }
 
   collector.unknownKeys(path, raw, BULK_KEYS);
 
-  const provider = collector.provider(path, raw.provider, defaults.provider);
+  const bound = bindSource(collector, path, raw, sources);
   const key = collector.string(path, raw.key, 'key');
   if (key === undefined && raw.key === undefined) {
     collector.add(path, 'missing "key" (the secret name or ARN)');
   }
   const prefix = collector.string(path, raw.prefix, 'prefix');
+  const versionStage = collector.string(path, raw.versionStage, 'versionStage');
+  const versionId = collector.string(path, raw.versionId, 'versionId');
 
-  if (provider === undefined || key === undefined) {
+  if (bound === undefined || key === undefined) {
     return undefined;
   }
 
   return {
-    provider,
+    sourceName: bound.sourceName,
+    source: bound.source,
     key,
-    prefix,
-    profile: collector.string(path, raw.profile, 'profile') ?? defaults.profile,
-    region: collector.string(path, raw.region, 'region') ?? defaults.region,
-    versionStage: collector.string(path, raw.versionStage, 'versionStage'),
-    versionId: collector.string(path, raw.versionId, 'versionId'),
-    source: path,
+    ...(prefix === undefined ? {} : { prefix }),
+    ...(versionStage === undefined ? {} : { versionStage }),
+    ...(versionId === undefined ? {} : { versionId }),
+    path,
   };
 }
 
-export function parseBlock(block: unknown, settings: BlockDefaults = {}, rootPath = 'externalSecrets'): ParsedBlock {
+export function parseBlock(block: unknown, options: ParseOptions): ParsedBlock {
+  const rootPath = options.rootPath ?? 'envRef';
   const collector = new IssueCollector();
 
   if (!isRecord(block)) {
@@ -192,14 +259,15 @@ export function parseBlock(block: unknown, settings: BlockDefaults = {}, rootPat
 
   collector.unknownKeys(rootPath, block, BLOCK_KEYS);
 
-  const defaults: BlockDefaults = {
-    provider:
-      block.provider === undefined
-        ? settings.provider
-        : collector.provider(rootPath, block.provider, undefined),
-    profile: collector.string(rootPath, block.profile, 'profile') ?? settings.profile,
-    region: collector.string(rootPath, block.region, 'region') ?? settings.region,
-  };
+  const local =
+    block.sources === undefined
+      ? {}
+      : parseSources(collector, `${rootPath}.sources`, block.sources, options.schemas);
+  const sources: SourceMap = { ...(options.settingsSources ?? {}), ...local };
+
+  if (Object.keys(sources).length === 0) {
+    collector.add(rootPath, 'needs at least one entry in "sources" (here or in the "envref.sources" setting)');
+  }
 
   let target: EnvTarget | undefined;
   if (block.target !== undefined) {
@@ -210,13 +278,13 @@ export function parseBlock(block: unknown, settings: BlockDefaults = {}, rootPat
     }
   }
 
-  const refs: SecretRef[] = [];
-  if (block.env !== undefined) {
-    if (!isRecord(block.env)) {
-      collector.add(`${rootPath}.env`, 'must be an object mapping variable names to secret references');
+  const refs: VarRef[] = [];
+  if (block.vars !== undefined) {
+    if (!isRecord(block.vars)) {
+      collector.add(`${rootPath}.vars`, 'must be an object mapping variable names to references');
     } else {
-      for (const [varName, raw] of Object.entries(block.env)) {
-        const ref = parseRef(collector, `${rootPath}.env.${varName}`, varName, raw, defaults);
+      for (const [varName, raw] of Object.entries(block.vars)) {
+        const ref = parseRef(collector, `${rootPath}.vars.${varName}`, varName, raw, sources);
         if (ref !== undefined) {
           refs.push(ref);
         }
@@ -224,13 +292,13 @@ export function parseBlock(block: unknown, settings: BlockDefaults = {}, rootPat
     }
   }
 
-  const bulk: SecretBulkRef[] = [];
-  if (block.envFrom !== undefined) {
-    if (!Array.isArray(block.envFrom)) {
-      collector.add(`${rootPath}.envFrom`, 'must be an array of { key, prefix? } entries');
+  const bulk: BulkRef[] = [];
+  if (block.varsFrom !== undefined) {
+    if (!Array.isArray(block.varsFrom)) {
+      collector.add(`${rootPath}.varsFrom`, 'must be an array of { source, key, prefix? } entries');
     } else {
-      block.envFrom.forEach((raw, index) => {
-        const entry = parseBulkRef(collector, `${rootPath}.envFrom[${index}]`, raw, defaults);
+      block.varsFrom.forEach((raw, index) => {
+        const entry = parseBulkRef(collector, `${rootPath}.varsFrom[${index}]`, raw, sources);
         if (entry !== undefined) {
           bulk.push(entry);
         }
@@ -238,13 +306,13 @@ export function parseBlock(block: unknown, settings: BlockDefaults = {}, rootPat
     }
   }
 
-  if (block.env === undefined && block.envFrom === undefined) {
-    collector.add(rootPath, 'needs at least one of "env" or "envFrom"');
+  if (block.vars === undefined && block.varsFrom === undefined) {
+    collector.add(rootPath, 'needs at least one of "vars" or "varsFrom"');
   }
 
   if (collector.issues.length > 0) {
     throw new ParseError(collector.issues);
   }
 
-  return { refs, bulk, target };
+  return { refs, bulk, ...(target === undefined ? {} : { target }) };
 }
