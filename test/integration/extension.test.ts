@@ -1,16 +1,17 @@
 import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-import { collectSources } from '../../src/commands/sources';
-import { BLOCK_KEY, ExternalSecretsConfigurationProvider } from '../../src/debug/configurationProvider';
+import { VarSet, collectSets } from '../../src/commands/sets';
+import { BLOCK_KEY, EnvRefConfigurationProvider } from '../../src/debug/configurationProvider';
 import { ChannelLogger } from '../../src/log';
 import { ProviderError, SecretProvider } from '../../src/providers/provider';
-import { SecretResolver } from '../../src/resolve/resolver';
+import { EnvRefResolver } from '../../src/resolve/resolver';
 import { ProviderId } from '../../src/types';
 
 const DB_JSON = JSON.stringify({ password: 's3cr3t', host: 'db.internal' });
 
 class StubProvider implements SecretProvider {
   readonly id: ProviderId = 'aws-sm';
+  readonly configKeys = ['profile', 'region'] as const;
 
   constructor(private readonly failing = false) {}
 
@@ -25,13 +26,13 @@ class StubProvider implements SecretProvider {
   }
 }
 
-function providerFor(failing = false): ExternalSecretsConfigurationProvider {
+function providerFor(failing = false): EnvRefConfigurationProvider {
   const stub = new StubProvider(failing);
-  const logger = new ChannelLogger(vscode.window.createOutputChannel('External Secrets (test)'));
-  return new ExternalSecretsConfigurationProvider({
-    resolver: new SecretResolver(new Map<ProviderId, SecretProvider>([[stub.id, stub]]), { logger }),
+  const logger = new ChannelLogger(vscode.window.createOutputChannel('EnvRef (test)'));
+  return new EnvRefConfigurationProvider({
+    resolver: new EnvRefResolver(new Map<ProviderId, SecretProvider>([[stub.id, stub]]), { logger }),
     logger,
-    settings: () => ({}),
+    settingsSources: () => ({}),
   });
 }
 
@@ -43,27 +44,27 @@ function fixtureConfig(): vscode.DebugConfiguration {
     program: 'app.js',
     env: { LOG_LEVEL: 'debug' },
     [BLOCK_KEY]: {
-      provider: 'aws-sm',
-      profile: 'fixture',
-      region: 'us-east-1',
-      env: { DB_PASSWORD: { key: 'fixture/db', property: 'password' } },
+      sources: {
+        fixture: { provider: 'aws-sm', profile: 'fixture', region: 'us-east-1' },
+      },
+      vars: { DB_PASSWORD: { source: 'fixture', key: 'fixture/db', property: 'password' } },
     },
   };
 }
 
-suite('External Secrets extension', () => {
+suite('EnvRef extension', () => {
   test('activates and exposes its commands', async () => {
-    const extension = vscode.extensions.getExtension('mniak.vscode-external-secrets');
+    const extension = vscode.extensions.getExtension('mniak.vscode-envref');
     assert.ok(extension, 'extension not found in the test host');
     await extension.activate();
 
     const commands = await vscode.commands.getCommands(true);
     for (const command of [
-      'externalSecrets.clearCache',
-      'externalSecrets.showLog',
-      'externalSecrets.openTerminal',
-      'externalSecrets.exportEnvFile',
-      'externalSecrets.resolveInput',
+      'envref.clearCache',
+      'envref.showLog',
+      'envref.openTerminal',
+      'envref.exportEnvFile',
+      'envref.resolveInput',
     ]) {
       assert.ok(commands.includes(command), `${command} is not registered`);
     }
@@ -72,11 +73,14 @@ suite('External Secrets extension', () => {
   test('reads the block from the fixture launch.json', () => {
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder);
-    const sources = collectSources(folder);
-    const source = sources.find((candidate) => candidate.label === 'fixture with secrets');
-    assert.ok(source, 'launch configuration with an externalSecrets block was not found');
-    assert.equal(source.description, 'launch configuration');
-    assert.equal(sources.some((candidate) => candidate.label === 'fixture without secrets'), false);
+    const sets = collectSets(folder);
+    const set = sets.find((candidate: VarSet) => candidate.label === 'fixture with secrets');
+    assert.ok(set, 'launch configuration with an envRef block was not found');
+    assert.equal(set.description, 'launch configuration');
+    assert.equal(
+      sets.some((candidate: VarSet) => candidate.label === 'fixture without secrets'),
+      false,
+    );
   });
 
   test('injects string values into env and hides the block from the adapter', async () => {
@@ -86,7 +90,7 @@ suite('External Secrets extension', () => {
     );
 
     assert.ok(resolved);
-    assert.equal(BLOCK_KEY in resolved, false, 'the externalSecrets block reached the adapter');
+    assert.equal(BLOCK_KEY in resolved, false, 'the envRef block reached the adapter');
     assert.deepEqual(resolved['env'], { LOG_LEVEL: 'debug', DB_PASSWORD: 's3cr3t' });
     for (const value of Object.values(resolved['env'] as Record<string, unknown>)) {
       assert.equal(typeof value, 'string');
@@ -141,7 +145,10 @@ suite('External Secrets extension', () => {
           type: 'node',
           request: 'launch',
           name: 'broken',
-          [BLOCK_KEY]: { provider: 'aws-sm', env: { DB_PASSWORD: { property: 'password' } } },
+          [BLOCK_KEY]: {
+            sources: { fixture: { provider: 'aws-sm' } },
+            vars: { DB_PASSWORD: { source: 'fixture', property: 'password' } },
+          },
         },
       );
       assert.equal(resolved, undefined);
@@ -171,7 +178,7 @@ suite('Backward compatibility', () => {
       name: 'unknown attribute',
       program: `${folder.uri.fsPath}/app.js`,
       internalConsoleOptions: 'neverOpen',
-      unknownAttributeThatNoAdapterKnows: { env: { A: { key: 'k' } } },
+      unknownAttributeThatNoAdapterKnows: { vars: { A: { source: 'dev', key: 'k' } } },
     } as vscode.DebugConfiguration);
 
     assert.equal(started, true, 'the adapter refused a configuration with an unknown attribute');

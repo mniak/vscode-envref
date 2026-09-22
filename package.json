@@ -92,7 +92,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
     "test:unit": "vitest run",
-    "test:integration": "tsc -p . && vscode-test",
+    "test:integration": "npm run build && tsc -p . && vscode-test",
     "test": "npm run lint && npm run typecheck && npm run test:unit",
     "package": "npm run build && vsce package",
     "vscode:prepublish": "node esbuild.mjs --production"

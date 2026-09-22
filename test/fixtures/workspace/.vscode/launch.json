@@ -9,12 +9,12 @@
       "env": {
         "LOG_LEVEL": "debug"
       },
-      "externalSecrets": {
-        "provider": "aws-sm",
-        "profile": "fixture",
-        "region": "us-east-1",
-        "env": {
-          "DB_PASSWORD": { "key": "fixture/db", "property": "password" }
+      "envRef": {
+        "sources": {
+          "fixture": { "provider": "aws-sm", "profile": "fixture", "region": "us-east-1" }
+        },
+        "vars": {
+          "DB_PASSWORD": { "source": "fixture", "key": "fixture/db", "property": "password" }
         }
       }
     },
