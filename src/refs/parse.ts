@@ -1,5 +1,4 @@
 import {
-  BulkRef,
   Encoding,
   EnvTarget,
   ParsedBlock,
@@ -31,9 +30,8 @@ export interface ParseOptions {
   rootPath?: string;
 }
 
-const BLOCK_KEYS = ['sources', 'vars', 'varsFrom', 'target'];
+const BLOCK_KEYS = ['sources', 'vars', 'target'];
 const REF_KEYS = ['source', 'key', 'property', 'versionStage', 'versionId', 'default', 'encoding'];
-const BULK_KEYS = ['source', 'key', 'prefix', 'versionStage', 'versionId'];
 
 type Rec = Record<string, unknown>;
 
@@ -212,43 +210,6 @@ function parseRef(
   };
 }
 
-function parseBulkRef(
-  collector: IssueCollector,
-  path: string,
-  raw: unknown,
-  sources: SourceMap,
-): BulkRef | undefined {
-  if (!isRecord(raw)) {
-    collector.add(path, 'must be an object such as { "source": "dev", "key": "my/secret", "prefix": "DB_" }');
-    return undefined;
-  }
-
-  collector.unknownKeys(path, raw, BULK_KEYS);
-
-  const bound = bindSource(collector, path, raw, sources);
-  const key = collector.string(path, raw.key, 'key');
-  if (key === undefined && raw.key === undefined) {
-    collector.add(path, 'missing "key" (the secret name or ARN)');
-  }
-  const prefix = collector.string(path, raw.prefix, 'prefix');
-  const versionStage = collector.string(path, raw.versionStage, 'versionStage');
-  const versionId = collector.string(path, raw.versionId, 'versionId');
-
-  if (bound === undefined || key === undefined) {
-    return undefined;
-  }
-
-  return {
-    sourceName: bound.sourceName,
-    source: bound.source,
-    key,
-    ...(prefix === undefined ? {} : { prefix }),
-    ...(versionStage === undefined ? {} : { versionStage }),
-    ...(versionId === undefined ? {} : { versionId }),
-    path,
-  };
-}
-
 export function parseBlock(block: unknown, options: ParseOptions): ParsedBlock {
   const rootPath = options.rootPath ?? 'envRef';
   const collector = new IssueCollector();
@@ -292,27 +253,13 @@ export function parseBlock(block: unknown, options: ParseOptions): ParsedBlock {
     }
   }
 
-  const bulk: BulkRef[] = [];
-  if (block.varsFrom !== undefined) {
-    if (!Array.isArray(block.varsFrom)) {
-      collector.add(`${rootPath}.varsFrom`, 'must be an array of { source, key, prefix? } entries');
-    } else {
-      block.varsFrom.forEach((raw, index) => {
-        const entry = parseBulkRef(collector, `${rootPath}.varsFrom[${index}]`, raw, sources);
-        if (entry !== undefined) {
-          bulk.push(entry);
-        }
-      });
-    }
-  }
-
-  if (block.vars === undefined && block.varsFrom === undefined) {
-    collector.add(rootPath, 'needs at least one of "vars" or "varsFrom"');
+  if (block.vars === undefined) {
+    collector.add(rootPath, 'needs "vars"');
   }
 
   if (collector.issues.length > 0) {
     throw new ParseError(collector.issues);
   }
 
-  return { refs, bulk, ...(target === undefined ? {} : { target }) };
+  return { refs, ...(target === undefined ? {} : { target }) };
 }

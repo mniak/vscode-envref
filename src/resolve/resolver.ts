@@ -1,7 +1,6 @@
 import { FetchRequest, FetchedSecret, ProviderError, SecretProvider } from '../providers/provider';
 import { ProviderSchema } from '../refs/parse';
 import {
-  BulkRef,
   Logger,
   ParsedBlock,
   ProviderId,
@@ -11,8 +10,6 @@ import {
   VarRef,
   silentLogger,
 } from '../types';
-
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 interface CacheEntry {
   expiresAt: number;
@@ -77,19 +74,7 @@ export class EnvRefResolver {
       }
     });
 
-    const bulk = block.bulk.map(async (entry) => {
-      try {
-        const secret = await this.fetch(entry.source, requestOf(entry));
-        for (const [name, value] of expand(entry, secret)) {
-          values.set(name, value);
-        }
-        this.logger.debug(`Expanded ${entry.key} into environment variables.`);
-      } catch (error) {
-        failures.push(toFailure(error, entry));
-      }
-    });
-
-    await Promise.all([...single, ...bulk]);
+    await Promise.all(single);
     return { values, failures };
   }
 
@@ -121,7 +106,7 @@ export class EnvRefResolver {
   }
 }
 
-function requestOf(ref: VarRef | BulkRef): FetchRequest {
+function requestOf(ref: VarRef): FetchRequest {
   return {
     key: ref.key,
     config: ref.source.config,
@@ -155,29 +140,6 @@ function extract(ref: VarRef, secret: FetchedSecret): string {
   return stringify(found);
 }
 
-function expand(entry: BulkRef, secret: FetchedSecret): Array<[string, string]> {
-  const document = parseJson(decode(secret, 'utf8'), entry.key);
-  const prefix = entry.prefix ?? '';
-  const result: Array<[string, string]> = [];
-
-  for (const [field, value] of Object.entries(document)) {
-    if (value === null || value === undefined) {
-      continue;
-    }
-    const name = `${prefix}${field}`;
-    if (!ENV_NAME.test(name)) {
-      throw new ProviderError(
-        'invalid',
-        `Field "${field}" of secret "${entry.key}" does not make a valid environment variable name ("${name}").`,
-        'Use "vars" with explicit variable names instead of "varsFrom" for this secret.',
-      );
-    }
-    result.push([name, stringify(value)]);
-  }
-
-  return result;
-}
-
 function parseJson(text: string, key: string): Record<string, unknown> {
   let parsed: unknown;
   try {
@@ -186,7 +148,7 @@ function parseJson(text: string, key: string): Record<string, unknown> {
     throw new ProviderError(
       'invalid',
       `Secret "${key}" is not JSON, so its fields cannot be read.`,
-      'Drop "property"/"varsFrom" to use the whole secret value.',
+      'Drop "property" to use the whole secret value.',
     );
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -225,7 +187,7 @@ function stringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function toFailure(error: unknown, ref: VarRef | BulkRef, varName?: string): ResolveFailure {
+function toFailure(error: unknown, ref: VarRef, varName?: string): ResolveFailure {
   const base = {
     path: ref.path,
     key: ref.key,

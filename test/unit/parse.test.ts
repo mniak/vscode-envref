@@ -122,25 +122,8 @@ describe('parseBlock', () => {
     expect((error as ParseError).issues).toHaveLength(2);
   });
 
-  it('parses varsFrom with and without prefix', () => {
-    const parsed = parse({
-      sources: TWO_SOURCES,
-      varsFrom: [
-        { source: 'dev', key: 'sandbox/cards/all' },
-        { source: 'partner', key: 'partner/db', prefix: 'DB_' },
-      ],
-    });
-    expect(parsed.bulk).toHaveLength(2);
-    expect(parsed.bulk[0]).toMatchObject({
-      key: 'sandbox/cards/all',
-      sourceName: 'dev',
-      path: 'envRef.varsFrom[0]',
-    });
-    expect(parsed.bulk[1]?.prefix).toBe('DB_');
-  });
-
-  it('requires vars or varsFrom', () => {
-    expect(() => parse({ sources: TWO_SOURCES })).toThrow(/at least one of "vars" or "varsFrom"/);
+  it('requires "vars"', () => {
+    expect(() => parse({ sources: TWO_SOURCES })).toThrow(/needs "vars"/);
   });
 
   it('rejects versionStage at block level', () => {

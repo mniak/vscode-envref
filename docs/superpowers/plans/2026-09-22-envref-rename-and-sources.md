@@ -65,7 +65,7 @@ Three distinct meanings of "source" collide today; this plan assigns each its ow
 ```jsonc
 "envRef": {
   "sources": {
-    "dev":     { "provider": "aws-sm", "profile": "sandbox-proj1",     "region": "us-east-1" },
+    "dev":     { "provider": "aws-sm", "profile": "sandbox-proj1", "region": "us-east-1" },
     "partner": { "provider": "aws-sm", "profile": "sandbox-proj2", "region": "eu-west-1" }
   },
   "vars": {

@@ -24,19 +24,8 @@ export interface VarRef {
   path: string;
 }
 
-export interface BulkRef {
-  sourceName: string;
-  source: SourceConfig;
-  key: string;
-  prefix?: string;
-  versionStage?: string;
-  versionId?: string;
-  path: string;
-}
-
 export interface ParsedBlock {
   refs: VarRef[];
-  bulk: BulkRef[];
   target?: EnvTarget;
 }
 

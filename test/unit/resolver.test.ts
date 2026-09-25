@@ -172,28 +172,6 @@ describe('EnvRefResolver', () => {
     expect(outcome.values.get('B64')).toBe('aGk=');
   });
 
-  it('expands varsFrom with and without prefix', async () => {
-    const provider = new FakeProvider({ 'dev/db': { value: DB_JSON } });
-    const outcome = await resolverFor(provider).resolve(
-      block({ varsFrom: [{ source: 'dev', key: 'dev/db', prefix: 'DB_' }] }),
-    );
-    expect(Object.fromEntries(outcome.values)).toEqual({
-      DB_password: 's3cr3t',
-      DB_host: 'db.internal',
-      DB_port: '5432',
-      DB_tls: 'true',
-    });
-  });
-
-  it('rejects varsFrom fields that are not valid variable names', async () => {
-    const provider = new FakeProvider({ 'dev/db': { value: JSON.stringify({ 'not-a-var': 'x' }) } });
-    const outcome = await resolverFor(provider).resolve(
-      block({ varsFrom: [{ source: 'dev', key: 'dev/db' }] }),
-    );
-    expect(outcome.failures[0]).toMatchObject({ kind: 'invalid' });
-    expect(outcome.values.size).toBe(0);
-  });
-
   it('fails when no provider is registered for the source', async () => {
     const resolver = new EnvRefResolver(new Map());
     const outcome = await resolver.resolve(block({ vars: { A: { source: 'dev', key: 'k' } } }));

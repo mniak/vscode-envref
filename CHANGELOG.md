@@ -8,7 +8,6 @@
   source it reads from, so one configuration can span several accounts, regions or providers.
 - `envref.sources` setting to declare sources once and reuse them from every launch configuration;
   a source declared in the block shadows a settings source of the same name.
-- `varsFrom` to import every field of a secret, with optional `prefix`.
 - Support for adapters that use `env` (map) and `environment` (array).
 - AWS Secrets Manager provider (`aws-sm`), taking `profile` and `region` from its source and falling
   back to the AWS SDK credential chain.

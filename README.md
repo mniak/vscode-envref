@@ -126,21 +126,6 @@ Two sources with identical configuration still share a single `GetSecretValue` c
 what makes a reference portable: it names *where* the value comes from, and the source decides *how*
 to get there.
 
-### `varsFrom`: every field of a secret
-
-When the secret is already modelled with the variable names, import all of its fields (the equivalent
-of `dataFrom` in ExternalSecrets):
-
-```jsonc
-"envRef": {
-  "sources": { "dev": { "provider": "aws-sm", "profile": "sandbox" } },
-  "varsFrom": [
-    { "source": "dev", "key": "sandbox/cards/env" },
-    { "source": "dev", "key": "sandbox/cards/db", "prefix": "DB_" }
-  ]
-}
-```
-
 ### Adapters that use `environment`
 
 `cppdbg` and `lldb` take an array instead of a map. The extension detects the shape of the

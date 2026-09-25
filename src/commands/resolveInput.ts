@@ -20,7 +20,7 @@ export async function resolveInput(deps: CommandDeps, args: unknown): Promise<st
   }
 
   const record = args as Record<string, unknown>;
-  const block = 'vars' in record || 'varsFrom' in record ? record : { vars: { [VAR_NAME]: record } };
+  const block = 'vars' in record ? record : { vars: { [VAR_NAME]: record } };
 
   let parsed;
   try {
@@ -37,7 +37,7 @@ export async function resolveInput(deps: CommandDeps, args: unknown): Promise<st
     throw error;
   }
 
-  if (parsed.refs.length !== 1 || parsed.bulk.length > 0) {
+  if (parsed.refs.length !== 1) {
     await reportError(
       'EnvRef: invalid input variable.',
       'An input variable resolves exactly one reference.',
